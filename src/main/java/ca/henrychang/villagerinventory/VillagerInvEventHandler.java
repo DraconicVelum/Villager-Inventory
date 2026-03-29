@@ -6,14 +6,11 @@ import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryCloseEvent;
-import org.bukkit.event.inventory.InventoryDragEvent;
-import org.bukkit.event.inventory.InventoryType;
-import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.PlayerInteractAtEntityEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-
 
 public class VillagerInvEventHandler implements Listener {
     VillagerInventory plugin;
@@ -26,122 +23,136 @@ public class VillagerInvEventHandler implements Listener {
     public void onVillagerDied(EntityDeathEvent e) {
         if (!plugin.dropOnDeath)
             return;
-        LivingEntity ent = e.getEntity();
-        if (!(ent instanceof Villager))
+
+        if (!(e.getEntity() instanceof Villager v))
             return;
-        Villager v = (Villager) ent;
+
         for (ItemStack is : v.getInventory().getContents())
             if (is != null)
                 v.getWorld().dropItemNaturally(v.getLocation(), is);
     }
 
     @EventHandler
-    public void onInteract(PlayerInteractEntityEvent e) {
+    public void onInteract(PlayerInteractAtEntityEvent e) {
+        if (e.getHand() != EquipmentSlot.HAND)
+            return;
+
         Player player = e.getPlayer();
+        Material hand = player.getInventory().getItemInMainHand().getType();
 
-        if(player.getInventory().getItemInMainHand().getType() != plugin.interactMaterial)
+        if (hand != plugin.interactMaterial)
             return;
 
-        if(player == null)
+        if (!(e.getRightClicked() instanceof Villager v))
             return;
 
-        Entity villager = e.getRightClicked();
-        if(villager == null || villager.getType() != EntityType.VILLAGER)
-            return;
-
-        Villager v = (Villager) villager;
-
-        if(v.isLeashed())
+        if (v.isLeashed())
             return;
 
         e.setCancelled(true);
-        Inventory i = v.getInventory();
 
-        String ni_title;
-        if(v.getCustomName() != null)
-            ni_title = v.getName()+"'s Inventory ("+v.getProfession()+")";
-        else
-            ni_title = v.getName()+"'s Inventory";
+        Inventory villagerInv = v.getInventory();
 
-        Inventory ni = Bukkit.createInventory(player, 9, ni_title);
-        for (ItemStack item : i.getContents()){
+        String title = (v.getCustomName() != null)
+                ? v.getName() + "'s Inventory (" + v.getProfession() + ")"
+                : v.getName() + "'s Inventory";
+
+        Inventory customInv = Bukkit.createInventory(
+                new VillagerInventoryHolder(),
+                9,
+                title
+        );
+
+        for (ItemStack item : villagerInv.getContents()) {
             if (item != null)
-                ni.addItem(item);
+                customInv.addItem(item);
         }
-        //Fill last slot
-        ItemStack lastItem = new ItemStack(Material.BARRIER);
-        ni.setItem(8, lastItem);
+
+        customInv.setItem(8, new ItemStack(Material.BARRIER));
+
         if (v.isSleeping())
             v.wakeup();
-        player.openInventory(ni);
+
+        player.openInventory(customInv);
         plugin.invMap.put(player.getUniqueId(), v);
     }
 
     @EventHandler
     public void onClick(InventoryClickEvent evt) {
-        Inventory v = evt.getInventory();
-        HumanEntity player = evt.getWhoClicked();
-
-        if(v == null)
+        if (!(evt.getWhoClicked() instanceof Player player))
             return;
 
-        if(v.getSize() != 9 || v.getType() != InventoryType.CHEST || !plugin.invMap.containsKey(player.getUniqueId()))
+        Inventory inv = evt.getInventory();
+
+        if (!(inv.getHolder() instanceof VillagerInventoryHolder))
             return;
 
+        if (inv.getSize() != 9 || inv.getType() != InventoryType.CHEST)
+            return;
 
-        final int slot = evt.getSlot();
+        if (!plugin.invMap.containsKey(player.getUniqueId()))
+            return;
 
-        if(slot > 8 || slot < 0)
+        int slot = evt.getSlot();
+        if (slot < 0 || slot > 8)
             return;
 
         Villager villager = plugin.invMap.get(player.getUniqueId());
-        if(villager == null)
+        if (villager == null)
             return;
 
-        if(evt.getCurrentItem() != null)
-            if(evt.getCurrentItem().getType() == Material.BARRIER){
-                evt.setCancelled(true);
-                return;
-            }
+        ItemStack clicked = evt.getCurrentItem();
+        if (clicked != null && clicked.getType() == Material.BARRIER) {
+            evt.setCancelled(true);
+            return;
+        }
 
-        Bukkit.getScheduler().runTask(plugin, new InvUpdater(v, villager.getInventory(), (Player) player));
+        Bukkit.getScheduler().runTask(plugin,
+                new InvUpdater(inv, villager.getInventory(), player));
     }
 
     @EventHandler
     public void onDrag(InventoryDragEvent evt) {
-        Inventory v = evt.getInventory();
-        HumanEntity player = evt.getWhoClicked();
+        if (!(evt.getWhoClicked() instanceof Player player))
+            return;
 
-        if(v == null)
+        Inventory inv = evt.getInventory();
+
+        if (!(inv.getHolder() instanceof VillagerInventoryHolder))
             return;
-        if(v.getSize() != 9 || v.getType() != InventoryType.CHEST || !plugin.invMap.containsKey(player.getUniqueId()))
+
+        if (inv.getSize() != 9 || inv.getType() != InventoryType.CHEST)
             return;
+
         Villager villager = plugin.invMap.get(player.getUniqueId());
-        if(villager == null)
+        if (villager == null)
             return;
 
-        Bukkit.getScheduler().runTask(plugin, new InvUpdater(v, villager.getInventory(), (Player) player));
+        Bukkit.getScheduler().runTask(plugin,
+                new InvUpdater(inv, villager.getInventory(), player));
     }
 
-
     @EventHandler
-    public void onClose(InventoryCloseEvent evt){
-        Inventory v = evt.getInventory();
-        HumanEntity player = evt.getPlayer();
+    public void onClose(InventoryCloseEvent evt) {
+        if (!(evt.getPlayer() instanceof Player player))
+            return;
 
-        if(v == null)
+        Inventory inv = evt.getInventory();
+
+        if (!(inv.getHolder() instanceof VillagerInventoryHolder))
             return;
-        if(v.getSize() != 9 || v.getType() != InventoryType.CHEST || !plugin.invMap.containsKey(player.getUniqueId()))
-            return;
-        if(evt.getPlayer() == null)
+
+        if (inv.getSize() != 9 || inv.getType() != InventoryType.CHEST)
             return;
 
         Villager villager = plugin.invMap.get(player.getUniqueId());
-        if(villager == null)
+        if (villager == null)
             return;
 
-        Bukkit.getScheduler().runTask(plugin, new InvUpdater(v, villager.getInventory(), (Player) player));
-        plugin.invMap.remove(evt.getPlayer().getUniqueId());
+        Bukkit.getScheduler().runTask(plugin,
+                new InvUpdater(inv, villager.getInventory(), player));
+
+        plugin.invMap.remove(player.getUniqueId());
     }
 
     private class InvUpdater implements Runnable {
@@ -150,10 +161,10 @@ public class VillagerInvEventHandler implements Listener {
         Player player;
 
         public InvUpdater(Inventory sourceInv, Inventory targetInv, Player player) {
-            this(sourceInv, targetInv, player,true);
+            this(sourceInv, targetInv, player, true);
         }
 
-        public InvUpdater(Inventory sourceInv, Inventory targetInv, Player player, boolean needReStack){
+        public InvUpdater(Inventory sourceInv, Inventory targetInv, Player player, boolean needReStack) {
             this.sourceInv = sourceInv;
             this.targetInv = targetInv;
             this.needReStack = needReStack;
@@ -162,51 +173,57 @@ public class VillagerInvEventHandler implements Listener {
 
         @Override
         public void run() {
-            for(int i = 0; i < 8; i++)
+            for (int i = 0; i < 8; i++)
                 targetInv.setItem(i, sourceInv.getItem(i));
-            if(needReStack){
+
+            if (needReStack) {
                 restackInv(targetInv);
-                Bukkit.getScheduler().runTask(plugin, new InvUpdater(targetInv, sourceInv, player, false));
+                Bukkit.getScheduler().runTask(plugin,
+                        new InvUpdater(targetInv, sourceInv, player, false));
             }
         }
 
-        private void restackInv(Inventory inv){
+        private void restackInv(Inventory inv) {
             boolean changed = false;
-            loop1: for(int i = 0; i < 8; i++) {
+
+            loop1:
+            for (int i = 0; i < 8; i++) {
                 ItemStack cur = inv.getItem(i);
-                //get rid of empty slots between items
-                if(cur == null){
-                    for(int j = i + 1; j < 8; j++)
-                        if(inv.getItem(j) != null) {
+
+                if (cur == null) {
+                    for (int j = i + 1; j < 8; j++)
+                        if (inv.getItem(j) != null) {
                             inv.setItem(i, inv.getItem(j));
                             inv.setItem(j, null);
                             changed = true;
                             continue loop1;
                         }
-                    continue loop1;
+                    continue;
                 }
 
-                //recombine stacks
-                if(cur.getAmount() < cur.getMaxStackSize())
-                    loop2: for(int j = i + 1; j < 8; j++)
-                        if(inv.getItem(j) != null && inv.getItem(j).isSimilar(cur)){
-                            int jSize = inv.getItem(j).getAmount();
-                            int newSize = cur.getAmount() + jSize;
-                            if (newSize > cur.getMaxStackSize()){
-                                inv.getItem(j).setAmount(jSize - (cur.getMaxStackSize() - cur.getAmount()));
+                if (cur.getAmount() < cur.getMaxStackSize())
+                    for (int j = i + 1; j < 8; j++) {
+                        ItemStack other = inv.getItem(j);
+
+                        if (other != null && other.isSimilar(cur)) {
+                            int newSize = cur.getAmount() + other.getAmount();
+
+                            if (newSize > cur.getMaxStackSize()) {
+                                other.setAmount(newSize - cur.getMaxStackSize());
                                 cur.setAmount(cur.getMaxStackSize());
                                 changed = true;
-                                break loop2;
-                            }else {
-                                cur.setAmount(cur.getAmount() + jSize);
-                                inv.setItem(j,null);
+                                break;
+                            } else {
+                                cur.setAmount(newSize);
+                                inv.setItem(j, null);
+                                changed = true;
                             }
-                            changed = true;
                         }
+                    }
             }
-            if(changed)
+
+            if (changed)
                 restackInv(inv);
         }
     }
-
 }
