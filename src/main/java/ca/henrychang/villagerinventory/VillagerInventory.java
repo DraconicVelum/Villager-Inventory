@@ -10,7 +10,6 @@ import java.util.UUID;
 public final class VillagerInventory extends JavaPlugin {
 
     VillagerInvEventHandler eventHandler;
-
     HashMap<UUID, Villager> invMap;
 
     Material interactMaterial = Material.STICK;
@@ -18,36 +17,43 @@ public final class VillagerInventory extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        // Plugin startup logic
-        getServer().getConsoleSender().sendMessage("Villager Inventory Plugin Version 2.5");
-        getServer().getConsoleSender().sendMessage("Villager Inventory Plugin Starting...");
+        getLogger().info("Villager Inventory Plugin Version 2.5");
+        getLogger().info("Villager Inventory Plugin Starting...");
 
         String key_material = "Interactive-Material";
-        String key_dropOnDeath ="Drop-On-Death";
-        if (!getConfig().contains(key_material) || Material.matchMaterial(getConfig().getString(key_material)) == null) {
-            getConfig().set(key_material, interactMaterial.toString());
-            saveConfig();
-        }else {
-            interactMaterial = Material.matchMaterial(getConfig().getString(key_material));
+        String key_dropOnDeath = "Drop-On-Death";
+
+        String materialName = getConfig().getString(key_material);
+
+        Material mat = null;
+        if (materialName != null) {
+            mat = Material.matchMaterial(materialName, true);
         }
 
-        if(!getConfig().contains(key_dropOnDeath)) {
+        if (mat == null) {
+            interactMaterial = Material.STICK;
+            getConfig().set(key_material, interactMaterial.toString());
+            saveConfig();
+        } else {
+            interactMaterial = mat;
+        }
+
+        if (!getConfig().contains(key_dropOnDeath)) {
             getConfig().set(key_dropOnDeath, dropOnDeath);
             saveConfig();
-        }else {
+        } else {
             dropOnDeath = getConfig().getBoolean(key_dropOnDeath);
         }
 
-
         eventHandler = new VillagerInvEventHandler(this);
         getServer().getPluginManager().registerEvents(eventHandler, this);
-        invMap = new HashMap<UUID, Villager>();
+
+        invMap = new HashMap<>();
     }
 
     @Override
     public void onDisable() {
-        // Plugin shutdown logic
-        getServer().getConsoleSender().sendMessage("Villager Inventory Plugin Stopping...");
+        getLogger().info("Villager Inventory Plugin Stopping...");
         invMap.clear();
     }
 }
